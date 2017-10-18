@@ -1,15 +1,111 @@
 # Software Debouncing
-In previously labs, we talked about how objects such as switches can cause some nasty effects since they are actually a mechanical system at heart. We talked about the simple hardware method of debouncing, but due to the many different design constraints, you may not be able to add or adjust hardware. Debouncing is also only one of many applications which would require the use of built in Timers to allow for other processes to take place.
 
-## Task
-You need to utilize the TIMER modules within the MSP430 processors to implement a debounced switch to control the state of an LED. You most likely will want to hook up your buttons on the development boards to an oscilloscope to see how much time it takes for the buttons to settle. The idea here is that your processor should be able to run other code, while relying on timers and interrupts to manage the debouncing in the background. You should not be using polling techniques for this assignment. Your code should also be able to detect 
+Utilize the TIMER modules within 5 different MSP430 microcontrollers to implement a debounced swith to control the state of an LED:
 
-### Hints
-You need to take a look at how the P1IE and P1IES registers work and how to control them within an interrupt routine. Remember that the debouncing is not going to be the main process you are going to run by the end of the lab.
+* MSP430G2553
+* MSP430F5529
+* MSP430FR2311
+* MSP430FR5994
+* MSP430FR6989
+ 
+This process should allow your processor to run other code, while relying on timers and interrupts to manage the debouncing in the background.
 
-## Extra Work
-### Low Power Modes
-Go into the datasheets or look online for information about the low power modes of your processors and using Energy Trace, see what the lowest power consumption you can achieve while still running your debouncing code. Take a note when your processor is not driving the LED (or unplug the header connecting the LED and check) but running the interrupt routine for your debouncing.
+## Code Configuration
 
-### Double the fun
-Can you expand your code to debounce two switches? Do you have to use two Timer peripherals to do this?
+The following code can be used on all of the boards with a slight change in code for the FR2311,where it uses Timer B vs Timer A. The only other change that is needed to be made is the pin assignments labeled as x's for LED1 and y's for Button
+
+```c
+	int main(void)
+	{
+    		WDTCTL = WDTPW | WDTHOLD;   // stop watchdog timer
+    		//PM5CTL0 &= ~LOCKLPM5;
+
+    		PxDIR  |= BITx;                     // Set output Direction
+    		PyREN  |= BITy;                   // Enables resistor for P1.1
+    		PyOUT  = BITy;                    // Makes resistor P1.1 a pull up
+    		PyIE |= BITy;
+   	        PyIES = 0;                     // Interrupts when 1.1 is pressed or low to high transition
+    		PyIFG &= ~BITy;                   // Clear interrupt flag
+    		TA0CCTL0 = 0x0010;                  // Enables Capture/compare register for interrupt of timer A0
+    		TA0CCR0 = 60000;                    // Set value for Timer A0 to count up to
+    		TA0CTL = TASSEL_2 + MC_0;           // Timer_A Control Register - SMCLK high frequency clock, timer stopped
+
+        	__enable_interrupt();
+
+        	__bis_SR_register(LPM0 + GIE);      // Low Power Mode w/ general interrupts enabled
+
+    	}
+
+    		// Interrupt Service Routine 1 which toggles on the LED on the release of the Button and starts timer a to act as a delay
+    		#pragma vector = PORT1_VECTOR
+    		__interrupt void Interrupt_1(void)
+    		{
+        		PxOUT ^= BITx;                      // Toggle LED
+        		PyIE &= ~BITy;                    // reset interrupt
+        		TA0CTL = TASSEL_2 + MC_1;           // Timer_A Control Register - SMCLK high frequency clock, Up
+    		}
+
+    		// Interrupt Service Routine 2 which stops Timer A0 and resets the interrupt
+    		#pragma vector=TIMER0_A0_VECTOR
+    		__interrupt void Interrupt_2(void)
+    		{
+        		TA0CTL = MC_0;                      // Stop timer
+        		PyIE |= BITy;                     // Interrupt enable set to BUTTON
+        		PyIFG &= ~BITy;                     // Clear interrupt flag
+    		}
+```
+
+## Pin Assignments
+
+```c		
+		   LED1		LED2	BUTTON
+* MSP430G2553	=> P1.0 	P1.6	P1.3
+* MSP430F5529	=> P1.0 	P4.7	P2.1
+* MSP430FR2311	=> P1.0 	P2.0	P1.1
+* MSP430FR5994	=> P1.0 	P1.1	P5.6
+* MSP430FR6989	=> P1.0 	P9.7	P1.1
+```
+
+## Code Example
+Make an LED change states with a button using Timer modules within the MSP430F5529 
+
+```c
+	int main(void)
+	{
+    		WDTCTL = WDTPW | WDTHOLD;   // stop watchdog timer
+    		//PM5CTL0 &= ~LOCKLPM5;
+
+    		P1DIR  |= BIT0;                     // Set output Direction
+    		P2REN  |= BIT1;                   // Enables resistor for P1.1
+    		P2OUT  = BIT1;                    // Makes resistor P1.1 a pull up
+    		P2IE |= BIT1;
+   	        P2IES = 0;                     // Interrupts when 1.1 is pressed or low to high transition
+    		P2IFG &= ~BIT1;                   // Clear interrupt flag
+    		TA0CCTL0 = 0x0010;                  // Enables Capture/compare register for interrupt of timer A0
+    		TA0CCR0 = 60000;                    // Set value for Timer A0 to count up to
+    		TA0CTL = TASSEL_2 + MC_0;           // Timer_A Control Register - SMCLK high frequency clock, timer stopped
+
+        	__enable_interrupt();
+
+        	__bis_SR_register(LPM0 + GIE);      // Low Power Mode w/ general interrupts enabled
+
+    	}
+
+    		// Interrupt Service Routine 1 which toggles on the LED on the release of the Button and starts timer a to act as a delay
+    		#pragma vector = PORT2_VECTOR
+    		__interrupt void Interrupt_1(void)
+    		{
+        		P1OUT ^= BIT0;                      // Toggle LED
+        		P2IE &= ~BIT1;                    // reset interrupt
+        		TA0CTL = TASSEL_2 + MC_1;           // Timer_A Control Register - SMCLK high frequency clock, Up
+    		}
+
+    		// Interrupt Service Routine 2 which stops Timer A0 and resets the interrupt
+    		#pragma vector=TIMER0_A0_VECTOR
+    		__interrupt void Interrupt_2(void)
+    		{
+        		TA0CTL = MC_0;                      // Stop timer
+        		P2IE |= BIT1;                     // Interrupt enable set to BUTTON
+        		P2IFG &= ~BIT1;                     // Clear interrupt flag
+    		}
+```
